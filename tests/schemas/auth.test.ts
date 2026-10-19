@@ -255,8 +255,11 @@ describe("sep10VerifyRequestSchema — rejects invalid payloads", () => {
     const transaction = signedChallenge();
     for (const domain of [
       { home_domain: "" },
-      { home_domain: "example" },
+      // A hyphen-leading label is invalid no matter the field's grammar.
       { home_domain: "-anchor.example.com" },
+      // `client_domain` names the origin of the client's `stellar.toml` and so
+      // must stay a fully-qualified domain — it keeps main's strict grammar even
+      // though `home_domain`'s was relaxed (see src/lib/sep10-domain.ts).
       { client_domain: "wallet_example.com" },
       { client_domain: 42 },
       { clientDomain: "wallet.example.com.evil.com/path" },
@@ -264,6 +267,21 @@ describe("sep10VerifyRequestSchema — rejects invalid payloads", () => {
       const result = sep10VerifyRequestSchema.safeParse({ transaction, ...domain });
       expect(result.success).toBe(false);
     }
+  });
+
+  it("accepts a single-label home_domain but refuses it as a client_domain", () => {
+    // Issue #673: `config.SEP10_HOME_DOMAIN` falls back to the host of
+    // `API_PUBLIC_URL`, which for a `http://localhost` deployment is the bare
+    // label `localhost`. A home_domain grammar that required a dot would reject
+    // the very value the server told the client to send. A client_domain has no
+    // such fallback and still needs a TLD.
+    const transaction = signedChallenge();
+    expect(
+      sep10VerifyRequestSchema.safeParse({ transaction, home_domain: "localhost" }).success
+    ).toBe(true);
+    expect(
+      sep10VerifyRequestSchema.safeParse({ transaction, client_domain: "example" }).success
+    ).toBe(false);
   });
 });
 

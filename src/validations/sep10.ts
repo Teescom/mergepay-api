@@ -14,6 +14,7 @@
  */
 import { z } from "zod";
 import { stellarAccountIdSchema } from "../lib/stellar-validation";
+import { clientDomainSchema, sep10DomainSchema } from "../lib/sep10-domain";
 
 /** A Stellar ed25519 public key is always exactly 56 characters (G + 55). */
 const STELLAR_ACCOUNT_ID_LENGTH = 56;
@@ -47,15 +48,6 @@ export const sep10ChallengeRequestSchema = z
 export const sep10QuerySchema = z.object({}).strict();
 
 export type Sep10ChallengeRequest = z.infer<typeof sep10ChallengeRequestSchema>;
-
-const sep10DomainSchema = z
-  .string()
-  .min(1, "Domain cannot be empty when provided")
-  .max(253, "Domain exceeds maximum length")
-  .regex(
-    /^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/,
-    "Domain must be a valid domain name"
-  );
 
 /**
  * XDR packs every value into whole 4-byte words (RFC 4506 §8) and pads to
@@ -169,9 +161,9 @@ export const sep10VerifyRequestSchema = z
   .object({
     transaction: transactionXdrSchema,
     home_domain: sep10DomainSchema.optional(),
-    client_domain: sep10DomainSchema.optional(),
+    client_domain: clientDomainSchema.optional(),
     // Accept the original API spelling for existing clients.
-    clientDomain: sep10DomainSchema.optional(),
+    clientDomain: clientDomainSchema.optional(),
   })
   .strict();
 

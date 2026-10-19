@@ -2,6 +2,7 @@ import "dotenv/config";
 import { z } from "zod";
 import { Networks } from "@stellar/stellar-sdk";
 import { rateLimitConfigSchema } from "./config/env";
+import { sep10DomainSchema } from "./lib/sep10-domain";
 
 // URL validation helper
 const urlSchema = z.string().url("Invalid URL format");
@@ -110,8 +111,17 @@ const schema = z.object({
   // SEP-10 configuration - optional but validated if provided
   SEP10_SIGNING_SECRET: z.string().optional(),
   // If not set, derived from API_PUBLIC_URL so the deployed domain is used automatically.
-  SEP10_HOME_DOMAIN: z.string().optional(),
-  WEB_AUTH_DOMAIN: z.string().optional(),
+  //
+  // Validated with the same grammar the `/auth/verify` request schema uses
+  // (src/lib/sep10-domain.ts), because the route compares a client's
+  // `home_domain` against this value and names it in the error it returns. If
+  // the two grammars differ, a client that obeys that error is rejected for the
+  // shape of the domain the server just told it to send. An empty value is
+  // refused rather than treated as unset: `env.SEP10_HOME_DOMAIN ?? apiHost`
+  // passes `""` straight through, and a challenge whose home domain is the
+  // empty string can never be verified.
+  SEP10_HOME_DOMAIN: sep10DomainSchema.optional(),
+  WEB_AUTH_DOMAIN: sep10DomainSchema.optional(),
   /**
    * How long a freshly issued SEP-10 challenge stays redeemable, in seconds.
    *
@@ -392,6 +402,23 @@ const schema = z.object({
   {
     message: "HORIZON_URL must match STELLAR_NETWORK (testnet URLs for testnet, public URLs for public)",
     path: ["HORIZON_URL"],
+  }
+).refine(
+  (data) => {
+    // `signToken` sets `exp` exactly ACCESS_TOKEN_TTL_SECONDS after issuance and
+    // `verifyToken` rejects any token with less than TOKEN_EXPIRY_MARGIN_SECONDS
+    // left (src/services/jwt.ts). A margin at or above the TTL therefore makes
+    // `exp - now < margin` true for every token the instant it is minted: the
+    // API boots, signs, and then 401s every authenticated request with
+    // TOKEN_EXPIRED, with nothing else in the system pointing at the cause.
+    // `ACCESS_TOKEN_TTL_SECONDS=25` against the default 30s margin is enough to
+    // reach it, so the pair is validated rather than each half alone.
+    return data.ACCESS_TOKEN_TTL_SECONDS > data.TOKEN_EXPIRY_MARGIN_SECONDS;
+  },
+  {
+    message:
+      "ACCESS_TOKEN_TTL_SECONDS must be greater than TOKEN_EXPIRY_MARGIN_SECONDS, otherwise every access token is rejected as expired the moment it is issued",
+    path: ["ACCESS_TOKEN_TTL_SECONDS"],
   }
 );
 
